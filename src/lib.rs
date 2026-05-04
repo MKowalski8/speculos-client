@@ -242,6 +242,28 @@ impl SpeculosClient {
         Ok(body.data)
     }
 
+    /// Clicks a button (press-and-release) via the API.
+    pub async fn click_button(&self, button: Button) -> Result<(), SpeculosError> {
+        #[derive(Serialize)]
+        struct ButtonRequest {
+            action: &'static str,
+        }
+        let name = match button {
+            Button::Left => "left",
+            Button::Right => "right",
+        };
+        let response = self
+            .client
+            .post(format!("http://localhost:{}/button/{name}", self.port))
+            .json(&ButtonRequest {
+                action: "press-and-release",
+            })
+            .send()
+            .await?;
+        response.error_for_status()?;
+        Ok(())
+    }
+
     /// Sends an automation request via the API.
     pub async fn automation(&self, rules: &[AutomationRule<'_>]) -> Result<(), SpeculosError> {
         let response = self
