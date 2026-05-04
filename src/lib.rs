@@ -179,11 +179,15 @@ impl SpeculosClient {
             .stderr(Stdio::piped())
             .spawn()?;
 
-        // Wait for process to be ready by monitoring stderr
+        // Wait for process to be ready by monitoring stderr.
+        // Older apps without metadata print "launcher: using default app name & version";
+        // newer apps with embedded metadata print "[*] Env app name:" instead.
         if let Some(stderr) = process.stderr.take() {
             let reader = BufReader::new(stderr);
             for line in reader.lines().map_while(Result::ok) {
-                if line.contains("launcher: using default app name & version") {
+                if line.contains("launcher: using default app name & version")
+                    || line.contains("[*] Env app name:")
+                {
                     break;
                 }
             }
