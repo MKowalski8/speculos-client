@@ -179,18 +179,42 @@ impl SpeculosClient {
             .stderr(Stdio::piped())
             .spawn()?;
 
-        // Wait for process to be ready by monitoring stderr.
-        // Older apps without metadata print "launcher: using default app name & version";
-        // newer apps with embedded metadata print "[*] Env app name:" instead.
+        // Wait for the app to be ready by monitoring stderr, then poll until the API
+        // port accepts connections so the home screen has fully rendered.
+        //
+        // Older apps without metadata print "launcher: using default app name & version".
+        // Newer apps with embedded metadata print "[*] Env app version:" as their last
+        // startup line before the app binary starts executing and renders the home screen.
         if let Some(stderr) = process.stderr.take() {
             let reader = BufReader::new(stderr);
             for line in reader.lines().map_while(Result::ok) {
                 if line.contains("launcher: using default app name & version")
-                    || line.contains("[*] Env app name:")
+                    || line.contains("[*] Env app version:")
                 {
                     break;
                 }
             }
+        }
+
+        // Poll the /events endpoint until it returns non-empty events, which indicates
+        // that the home screen has fully rendered. This ensures automation rules registered
+        // right after new() will fire on the initial home screen text events.
+        let addr = format!("127.0.0.1:{port}");
+        let deadline = std::time::Instant::now() + timeout;
+        'poll: while std::time::Instant::now() < deadline {
+            if let Ok(mut stream) = std::net::TcpStream::connect(&addr) {
+                use std::io::{Read, Write};
+                let req = format!("GET /events HTTP/1.0\r\nHost: localhost:{port}\r\n\r\n");
+                if stream.write_all(req.as_bytes()).is_ok() {
+                    let mut resp = String::new();
+                    let _ = stream.read_to_string(&mut resp);
+                    // The response body contains events; non-empty events means the screen rendered
+                    if resp.contains("\"text\"") {
+                        break 'poll;
+                    }
+                }
+            }
+            std::thread::sleep(Duration::from_millis(100));
         }
 
         Ok(Self {
